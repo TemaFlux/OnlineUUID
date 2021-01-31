@@ -1,10 +1,11 @@
 package me.temaflux.onlineuuid;
 
-import java.lang.reflect.Method;
+import java.lang.reflect.Field;
+import java.util.Arrays;
 import java.util.UUID;
 
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
@@ -14,12 +15,11 @@ import org.bukkit.event.player.PlayerLoginEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import com.destroystokyo.paper.profile.PlayerProfile;
+import com.mojang.authlib.GameProfile;
 
 public class Main
 extends JavaPlugin
 implements Listener {
-	public static final String NMS_VERSION = Bukkit.getServer().getClass().getPackage().getName().substring(23);
 	private MojangAPI mojangapi = null;
 	
 	@Override
@@ -35,31 +35,26 @@ implements Listener {
 	
 	@EventHandler(priority = EventPriority.LOWEST)
 	public void onAsyncPlayerPreLoginEvent(AsyncPlayerPreLoginEvent e) {
-		PlayerProfile pp = e.getPlayerProfile();
-		UUID online = getUUID(pp.getName());
-		if (online != null && !online.equals(pp.getId())) {
-			pp.setId(online);
-			e.setPlayerProfile(pp);
-//			this.getLogger().info("Change from Offline to Online UUID for player: " + pp.getName());
+		try {
+			com.destroystokyo.paper.profile.PlayerProfile pp = e.getPlayerProfile();
+			UUID online = getUUID(pp.getName());
+			if (online != null && !online.equals(pp.getId())) {
+				pp.setId(online);
+				e.setPlayerProfile(pp);
+//				this.getLogger().info("Change from Offline to Online UUID for player: " + pp.getName());
+			}
 		}
+		catch (Exception | Error ex) {}
 	}
 	
 	@EventHandler(priority = EventPriority.LOWEST)
 	public void onPlayerLoginEvent(PlayerLoginEvent e) {
-		Player p = e.getPlayer();
-		UUID online = getUUID(p.getName());
-		if (online != null && !p.getUniqueId().equals(online)) {
-			setUUID(p, online);
-		}
+		setUUID(e);
 	}
 	
 	@EventHandler(priority = EventPriority.LOWEST)
 	public void onPlayerLoginEvent(PlayerQuitEvent e) {
-		Player p = e.getPlayer();
-		UUID online = getUUID(p.getName());
-		if (online != null && !p.getUniqueId().equals(online)) {
-			setUUID(p, online);
-		}
+		setUUID(e);
 	}
 	
 	public UUID getUUID(String name) {
@@ -72,21 +67,53 @@ implements Listener {
 		return uuid;
 	}
 	
+	public void setUUID(Event e) {
+		Player p = null;
+		if (e instanceof PlayerLoginEvent) p = ((PlayerLoginEvent) e).getPlayer();
+		else if (e instanceof PlayerQuitEvent) p = ((PlayerQuitEvent) e).getPlayer();
+		if (p == null) return;
+		String name = p.getName();
+		UUID online = getUUID(name);
+		if (online != null) {
+			//
+			Object ep = getCraftPlayer(p);
+			GameProfile gp = null;
+			try {
+				gp = (GameProfile) ep.getClass().getMethod("getProfile").invoke(ep);
+			} catch (Exception e1) {}
+			//
+			if (gp != null && !gp.getId().equals(online)) {
+				// Create new profile
+				GameProfile new_gp = new GameProfile(online, name);
+				new_gp.getProperties().putAll(gp.getProperties());
+				// Find gameprofile
+				String gp_f = null;
+				for (Field f : Arrays.asList(ep.getClass().getSuperclass().getDeclaredFields()))
+					if (f.getType() == GameProfile.class)
+						gp_f = f.getName();
+				// Change gameprofile
+				try {
+		            Field field = ep.getClass().getSuperclass().getDeclaredField(gp_f);
+		            field.setAccessible(true);
+		            field.set(ep, new_gp);
+				}
+				catch (Exception ex) {
+					ex.printStackTrace();
+				}
+			}
+			if (!p.getUniqueId().equals(online))
+				setUUID(p, online);
+		}
+	}
+	
 	public void setUUID(Player p, UUID uuid) {
-		try {
-			Object EP = getCraftPlayer(p);
-			Method setUUID = EP.getClass().getMethod("setUUID", UUID.class);
-			setUUID.invoke(EP, uuid);
-//			this.getLogger().info("Change from Offline to Online UUID for player #2: " + p.getName());
-		}
-		catch (Exception ex) {
-			ex.printStackTrace();
-		}
+		ReflectionUtil.useMethod(getCraftPlayer(p), "setUUID", UUID.class, uuid);
+//		this.getLogger().info("Change from Offline to Online UUID for player #2: " + p.getName());
 	}
 	
 	public static Object getCraftPlayer(Player player) {
 	    try {
-	        return Class.forName("org.bukkit.craftbukkit." + NMS_VERSION + ".entity.CraftPlayer")
+	        return ReflectionUtil.getCraftBukkitClass("entity.CraftPlayer")
 	                .getMethod("getHandle")
 	                .invoke(player);
 	    } catch (Exception e) {
