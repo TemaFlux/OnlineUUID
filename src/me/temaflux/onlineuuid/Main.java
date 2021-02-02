@@ -48,12 +48,12 @@ implements Listener {
 	}
 	
 	@EventHandler(priority = EventPriority.LOWEST)
-	public void onPlayerLoginEvent(PlayerLoginEvent e) {
+	public void onPlayerLogin(PlayerLoginEvent e) {
 		setUUID(e);
 	}
 	
 	@EventHandler(priority = EventPriority.LOWEST)
-	public void onPlayerLoginEvent(PlayerQuitEvent e) {
+	public void onPlayerQuit(PlayerQuitEvent e) {
 		setUUID(e);
 	}
 	
@@ -80,7 +80,9 @@ implements Listener {
 			GameProfile gp = null;
 			try {
 				gp = (GameProfile) ep.getClass().getMethod("getProfile").invoke(ep);
-			} catch (Exception e1) {}
+			} catch (Exception e1) {
+				e1.printStackTrace();
+			}
 			//
 			if (gp != null && !gp.getId().equals(online)) {
 				// Create new profile
